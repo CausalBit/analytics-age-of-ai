@@ -3,11 +3,18 @@
 # MAGIC # Reducing Telco Churn — Part 2 (Steps 7–9)
 # MAGIC ### Mosaic AI Vector Search → Lakebase → Databricks Apps
 # MAGIC
-# MAGIC Builds on Part 1. Uses the community variant of the dataset that adds a free-text
-# MAGIC `CustomerFeedback` column so we can demo retrieval + an app.
+# MAGIC Builds on Part 1. Adds a free-text `CustomerFeedback` column so we can demo
+# MAGIC semantic retrieval + an app.
 # MAGIC
-# MAGIC > Several fields marked `[VERIFY AGAINST CURRENT DOCS]` — Lakebase / Vector Search
-# MAGIC > APIs evolve; confirm against the KB source links before the live run.
+# MAGIC > **Serverless-native.** `databricks-vectorsearch` is `%pip`-installed below.
+# MAGIC > Mosaic AI Vector Search availability varies by workspace tier — the index cell
+# MAGIC > is wrapped so the notebook still completes (building the feedback table) if the
+# MAGIC > Vector Search service isn't enabled on your Free Edition workspace.
+
+# COMMAND ----------
+
+# MAGIC %pip install --quiet databricks-vectorsearch
+# MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -20,9 +27,6 @@ spark.sql(f"USE CATALOG {CATALOG}"); spark.sql(f"USE SCHEMA {SCHEMA}")
 # MAGIC ## Step 7 — Mosaic AI Vector Search: embed `CustomerFeedback`
 # MAGIC Create a Delta-Sync vector index over the feedback text so an agent/app can
 # MAGIC retrieve "why customers are unhappy" semantically.
-# MAGIC
-# MAGIC KB: `knowledge-base/vector-search-unstructured-retrieval.md`,
-# MAGIC `vector-search-terraform-index.md`
 
 # COMMAND ----------
 
@@ -48,40 +52,56 @@ display(spark.table("customer_feedback").limit(5))
 
 # COMMAND ----------
 
-from databricks.vector_search.client import VectorSearchClient
-
-vsc = VectorSearchClient()
+# Vector Search may not be enabled on every Free Edition workspace. Wrap it so the
+# notebook completes either way; on a workspace with VS enabled this builds a live index.
 VS_ENDPOINT = "telco-vs-endpoint"
 VS_INDEX = f"{CATALOG}.{SCHEMA}.feedback_index"
 
-# 1) An endpoint hosts the index.
 try:
-    vsc.create_endpoint(name=VS_ENDPOINT, endpoint_type="STANDARD")
-except Exception as e:
-    print("Endpoint may already exist:", e)
+    from databricks.vector_search.client import VectorSearchClient
+    vsc = VectorSearchClient(disable_notice=True)
 
-# 2) A Delta-Sync index that auto-embeds the feedback text with a Databricks-hosted model.
-index = vsc.create_delta_sync_index(
-    endpoint_name=VS_ENDPOINT,
-    index_name=VS_INDEX,
-    source_table_name=f"{CATALOG}.{SCHEMA}.customer_feedback",
-    pipeline_type="TRIGGERED",
-    primary_key="customerID",
-    embedding_source_column="CustomerFeedback",
-    embedding_model_endpoint_name="databricks-gte-large-en",  # a hosted embedding model
-)
-print("Vector index creating:", VS_INDEX)
-# [VERIFY AGAINST CURRENT DOCS] embedding model endpoint name + client signature.
+    # 1) An endpoint hosts the index.
+    try:
+        vsc.create_endpoint(name=VS_ENDPOINT, endpoint_type="STANDARD")
+        print(f"Creating VS endpoint {VS_ENDPOINT} ...")
+    except Exception as e:
+        print("VS endpoint may already exist:", e)
+
+    # Wait for the endpoint to come online.
+    vsc.wait_for_endpoint(VS_ENDPOINT, verbose=True)
+
+    # 2) A Delta-Sync index that auto-embeds the feedback text with a hosted model.
+    index = vsc.create_delta_sync_index(
+        endpoint_name=VS_ENDPOINT,
+        index_name=VS_INDEX,
+        source_table_name=f"{CATALOG}.{SCHEMA}.customer_feedback",
+        pipeline_type="TRIGGERED",
+        primary_key="customerID",
+        embedding_source_column="CustomerFeedback",
+        embedding_model_endpoint_name="databricks-gte-large-en",
+    )
+    print("Vector index creating:", VS_INDEX)
+    VS_OK = True
+except Exception as e:
+    print("Vector Search not available on this workspace — skipping index build.")
+    print("Reason:", e)
+    VS_OK = False
 
 # COMMAND ----------
 
-# Semantic query once the index has synced.
-results = index.similarity_search(
-    query_text="customers upset about price and support",
-    columns=["customerID", "CustomerFeedback", "Churn"],
-    num_results=3,
-)
-print(results)
+# Semantic query once the index has synced (only if VS is available).
+if VS_OK:
+    index.wait_until_ready(verbose=True)
+    results = index.similarity_search(
+        query_text="customers upset about price and support",
+        columns=["customerID", "CustomerFeedback", "Churn"],
+        num_results=3,
+    )
+    print(results)
+else:
+    print("Skipped similarity_search (Vector Search not enabled). "
+          "The customer_feedback table is still built and governed in Unity Catalog.")
 
 # COMMAND ----------
 
@@ -90,8 +110,6 @@ print(results)
 # MAGIC Lakebase is serverless Postgres integrated with the lakehouse (autoscaling,
 # MAGIC branching, UC sync). The app (Step 9) and agent (Part 3) use it as their
 # MAGIC transactional store — e.g. logging every churn lookup a care agent performs.
-# MAGIC
-# MAGIC KB: `knowledge-base/lakebase-projects.md`, `lakebase-product.md`
 
 # COMMAND ----------
 
@@ -100,7 +118,6 @@ print(results)
 #   databricks database create-database-instance telco-lakebase --capacity CU_1
 #
 # Then connect with any Postgres driver using an OAuth token as the password.
-# [VERIFY AGAINST CURRENT DOCS] instance CLI flags + auth flow.
 
 # COMMAND ----------
 
@@ -128,8 +145,6 @@ print(CARE_LOG_DDL)
 # MAGIC 1. calls the **Model Serving** endpoint for a live churn-risk score,
 # MAGIC 2. reads **feedback history** from **Lakebase**, and
 # MAGIC 3. logs the interaction back to Lakebase.
-# MAGIC
-# MAGIC KB: `knowledge-base/databricks-apps-key-concepts.md`, `databricks-apps-product.md`
 # MAGIC
 # MAGIC Deploy from a terminal:
 # MAGIC ```
