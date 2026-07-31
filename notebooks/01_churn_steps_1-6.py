@@ -20,8 +20,8 @@
 # COMMAND ----------
 
 # Central config — edit CATALOG/SCHEMA to match your Free Edition workspace.
-CATALOG = "main"                 # a catalog you can CREATE in (USE CATALOG + CREATE)
-SCHEMA  = "telco_churn"          # created below if missing
+CATALOG = "telco_churn"          # a catalog you can CREATE in (USE CATALOG + CREATE)
+SCHEMA  = "churn"                # created below if missing
 TABLE   = "customers"            # raw ingested Delta table
 FEATURE_TABLE = "customer_features"
 MODEL_NAME = f"{CATALOG}.{SCHEMA}.telco_churn_model"

@@ -11,7 +11,7 @@
 
 # COMMAND ----------
 
-CATALOG, SCHEMA = "main", "telco_churn"
+CATALOG, SCHEMA = "telco_churn", "churn"
 spark.sql(f"USE CATALOG {CATALOG}"); spark.sql(f"USE SCHEMA {SCHEMA}")
 
 # COMMAND ----------
