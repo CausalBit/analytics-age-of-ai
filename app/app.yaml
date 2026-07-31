@@ -1,0 +1,22 @@
+# Databricks App manifest for the Telco Customer Care app.
+# KB: knowledge-base/databricks-apps-key-concepts.md
+command: ["streamlit", "run", "app.py"]
+
+env:
+  - name: SERVING_ENDPOINT
+    value: "telco-churn-endpoint"
+  - name: LAKEBASE_DB
+    value: "databricks_postgres"
+  # LAKEBASE_HOST is injected from the database resource below at deploy time.
+
+# Declare the resources the app is allowed to use (governed by Unity Catalog / the
+# app's service principal). [VERIFY AGAINST CURRENT DOCS] resource schema for your CLI.
+resources:
+  - name: churn-endpoint
+    serving_endpoint:
+      name: "telco-churn-endpoint"
+      permission: "CAN_QUERY"
+  - name: telco-lakebase
+    database:
+      instance_name: "telco-lakebase"
+      permission: "CAN_CONNECT_AND_CREATE"

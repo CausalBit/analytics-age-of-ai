@@ -1,0 +1,41 @@
+# Omnigent agent definition — "Churn Explainer"
+# Omnigent is a common layer over Claude Code / Codex / Cursor / Pi / custom agents:
+# swap harness or model by changing one line, keeping tools/prompts/policies constant.
+# KB: knowledge-base/omnigent.md
+#
+# [VERIFY AGAINST CURRENT DOCS] Omnigent is Beta — confirm the exact YAML schema/keys
+# against https://docs.databricks.com/aws/en/omnigent/ before running. The structure
+# below is illustrative of the documented concepts, not a guaranteed-valid schema.
+
+name: churn-explainer
+description: >
+  Explains why a specific Telco customer is at risk of churning by reasoning over
+  the served model's churn-risk score and the customer's free-text feedback.
+
+# One line to swap the harness (claude-code | codex | cursor | pi) and the model.
+harness: claude-code
+model: databricks-claude-opus-4-8      # routed via Unity AI Gateway (no raw API keys)
+
+system_prompt: |
+  You are a customer-retention analyst for a telecom company. Given a customer's
+  churn-risk score and their verbatim feedback, explain in plain language WHY the
+  customer is at risk and recommend 1-2 concrete retention actions. Cite the score
+  and quote the feedback. Do not invent data you were not given.
+
+# Tools are auto-registered by ucode from Unity Catalog / Vector Search / SQL warehouses.
+tools:
+  - type: model_serving
+    name: telco-churn-endpoint          # live churn-risk score (Step 6)
+  - type: vector_search
+    index: main.telco_churn.feedback_index   # semantic feedback retrieval (Step 7)
+  - type: uc_function
+    name: main.telco_churn.get_customer_row   # optional structured lookup
+
+# Governance: only built-in contextual policies are supported in the managed Beta.
+policies:
+  - contextual: require_approval_for_writes   # e.g. before writing to Lakebase
+  - contextual: pii_redaction
+
+# Collaboration: the live session can be shared across devices (Databricks Sandboxes).
+collaboration:
+  shared_session: true

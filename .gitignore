@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# Databricks / secrets
+.databrickscfg
+*.env
+.env
+databricks.env
+
+# Data (keep the repo light; dataset is downloaded per README)
+*.csv
+!knowledge-base/**
+
+# Editor
+.vscode/
+.idea/
